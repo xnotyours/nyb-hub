@@ -308,7 +308,7 @@ do
 	--=== LOUD: laporkan parent & method yg dipakai adapter UI ===
 	local LOUDLOG, SECLOG = {}, {}
 	NYB.LOUDLOG, NYB.SECLOG = LOUDLOG, SECLOG
-	local function pt(p)
+	NYB.pt = function(p)
 		if type(p) ~= "table" then return "<" .. type(p) .. ">" end
 		return tostring(p.__type or p.Title or "?")
 	end
@@ -321,7 +321,7 @@ do
 			local tabOk = type(tab) == "table" and type(tab[method]) == "function"
 			warn(string.format("[LOUD] %s GAK ADA di %s(parent=%s) | ada di TAB? %s",
 				method, where, pt(chosen), tostring(tabOk)))
-			LOUDLOG[method] = LOUDLOG[method] or { where = where, parent = pt(chosen), tabOk = tabOk }
+			LOUDLOG[method] = LOUDLOG[method] or { where = where, parent = NYB.pt(chosen), tabOk = tabOk }
 			if tabOk then chosen, where = tab, "TAB(fallback)" end
 		end
 		return chosen
@@ -674,7 +674,7 @@ do
 		-- Versi lama pakai parentOf() -> __cur, jadi section ke-2 masuk ke dalam
 		-- section ke-1, ke-3 ke dalam ke-2, dst = 10 level bersarang + ClipsDescendants.
 		local host = (type(page) == "table" and page.__tab) or page
-		local htype = pt(host)
+		local htype = NYB.pt(host)
 		if type(host) ~= "table" or type(host.Section) ~= "function" then
 			warn("[LOUD] section '" .. tostring(text) .. "': host gak punya :Section -> " .. htype)
 		end
@@ -697,7 +697,7 @@ do
 				end)
 			end)
 		end
-		SECLOG[#SECLOG + 1] = { text = text, host = htype, depth = (#SECLOG + 1) }
+		NYB.SECLOG[#NYB.SECLOG + 1] = { text = text, host = htype, depth = (#NYB.SECLOG + 1) }
 		if type(page) == "table" then page.__cur = sec end
 		table.insert(NYB.ui._groups, { page = page, header = sec, text = text })
 		return sec
