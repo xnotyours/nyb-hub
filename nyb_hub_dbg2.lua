@@ -307,10 +307,12 @@ do
 
 	--=== DBG: pcall yg error-nya gak ditelan (nempel di root table) ===
 	NYB.DBG_SEEN = {}
+	NYB.DBG_ERR = {}
 	NYB.DBG = function(f, name)
 		if type(f) ~= "function" then
 			if not NYB.DBG_SEEN[name] then
 				NYB.DBG_SEEN[name] = true
+				NYB.DBG_ERR[name] = "BUKAN function (" .. type(f) .. ")"
 				warn("[DBG] " .. tostring(name) .. " BUKAN function -> " .. type(f))
 			end
 			return
@@ -318,6 +320,7 @@ do
 		local ok, err = pcall(f)
 		if not ok and not NYB.DBG_SEEN[name] then
 			NYB.DBG_SEEN[name] = true
+			NYB.DBG_ERR[name] = tostring(err)
 			warn("[DBG] " .. tostring(name) .. " ERROR: " .. tostring(err))
 		end
 	end
