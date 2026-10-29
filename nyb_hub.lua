@@ -1,5 +1,5 @@
 --[[ ==========================================================================
-     N Y B   H U B   |   Violence District Toolkit            v3.1
+     N Y B   H U B   |   Violence District Toolkit       v3.1-fix
      --------------------------------------------------------------------------
      File    : nyb_hub.lua      (file baru, engine sendiri)
      Engine  : WindUI (Footagesus) -- window/tab/section/element,
@@ -303,6 +303,28 @@ do
 		local c = signal:Connect(fn)
 		table.insert(NYB.conns, c)
 		return c
+	end
+
+	--=== LOUD: laporkan parent & method yg dipakai adapter UI ===
+	local LOUDLOG, SECLOG = {}, {}
+	NYB.LOUDLOG, NYB.SECLOG = LOUDLOG, SECLOG
+	local function pt(p)
+		if type(p) ~= "table" then return "<" .. type(p) .. ">" end
+		return tostring(p.__type or p.Title or "?")
+	end
+	NYB.pickParent = function(page, method)
+		local cur = (type(page) == "table") and page.__cur or nil
+		local tab = (type(page) == "table" and page.__tab) or page
+		local chosen, where = cur, "SECTION"
+		if chosen == nil then chosen, where = tab, "TAB" end
+		if type(chosen) ~= "table" or type(chosen[method]) ~= "function" then
+			local tabOk = type(tab) == "table" and type(tab[method]) == "function"
+			warn(string.format("[LOUD] %s GAK ADA di %s(parent=%s) | ada di TAB? %s",
+				method, where, pt(chosen), tostring(tabOk)))
+			LOUDLOG[method] = LOUDLOG[method] or { where = where, parent = pt(chosen), tabOk = tabOk }
+			if tabOk then chosen, where = tab, "TAB(fallback)" end
+		end
+		return chosen
 	end
 
 	NYB.delay = function()
@@ -648,7 +670,34 @@ do
 
 	--======== SECTION ========
 	NYB.ui.section = function(page, text)
-		local sec = parentOf(page):Section({ Title = text, Opened = true })
+		-- KONTRAK (AGENTS.md): section selalu dibuat di TAB, jadi sibling.
+		-- Versi lama pakai parentOf() -> __cur, jadi section ke-2 masuk ke dalam
+		-- section ke-1, ke-3 ke dalam ke-2, dst = 10 level bersarang + ClipsDescendants.
+		local host = (type(page) == "table" and page.__tab) or page
+		local htype = pt(host)
+		if type(host) ~= "table" or type(host.Section) ~= "function" then
+			warn("[LOUD] section '" .. tostring(text) .. "': host gak punya :Section -> " .. htype)
+		end
+		local sec = host:Section({ Title = text, Opened = true })
+		-- WindUI: Section baru jadi "Expandable" saat element PERTAMA masuk, dan
+		-- Open()/Close() dua-duanya di-guard `if Section.Expandable`. Jadi Open()
+		-- yang dipanggil task.defer saat Opened=true itu NO-OP (Expandable masih
+		-- false) -> section kekunci di tinggi header + ClipsDescendants = isinya
+		-- (toggle/slider) ke-clip, GAK KELIHATAN dan GAK BISA DIKLIK.
+		-- Paksa expand sekarang, dan sekali lagi setelah elemennya masuk.
+		pcall(function()
+			sec.Expandable = true
+			if sec.Open then sec:Open(true) end
+		end)
+		if type(task) == "table" and task.defer then
+			task.defer(function()
+				pcall(function()
+					sec.Expandable = true
+					if sec.Open then sec:Open(true) end
+				end)
+			end)
+		end
+		SECLOG[#SECLOG + 1] = { text = text, host = htype, depth = (#SECLOG + 1) }
 		if type(page) == "table" then page.__cur = sec end
 		table.insert(NYB.ui._groups, { page = page, header = sec, text = text })
 		return sec
@@ -672,7 +721,7 @@ do
 	end
 
 	NYB.ui.label = function(page, text, color)
-		return makeLabel(parentOf(page), text)
+		return makeLabel(NYB.pickParent(page, "Paragraph"), text)
 	end
 
 	NYB.ui.setLabel = function(lbl, text)
@@ -691,7 +740,7 @@ do
 			default = key and true or false
 		end
 
-		local el = parentOf(page):Toggle({
+		local el = NYB.pickParent(page, "Toggle"):Toggle({
 			Title = text,
 			Value = default,
 			Callback = function(state)
@@ -729,7 +778,7 @@ do
 		decimals = tonumber(decimals) or 0
 		local step = (decimals > 0) and (10 ^ -decimals) or 1
 
-		local el = parentOf(page):Slider({
+		local el = NYB.pickParent(page, "Slider"):Slider({
 			Title = text,
 			Value = { Min = min, Max = max, Default = default },
 			Step = step,
@@ -752,7 +801,7 @@ do
 
 	--======== COLORPICKER ========
 	NYB.ui.colorpicker = function(page, text, default, callback)
-		local parent = parentOf(page)
+		local parent = NYB.pickParent(page, "Colorpicker")
 		if type(parent.Colorpicker) ~= "function" then
 			-- WindUI versi ini nggak punya colorpicker: jangan crash, biar UI tetap kebentuk
 			return { el = nil, set = function() end }
@@ -774,7 +823,7 @@ do
 
 	--======== BUTTON ========
 	NYB.ui.button = function(page, text, callback)
-		return parentOf(page):Button({
+		return NYB.pickParent(page, "Button"):Button({
 			Title = text,
 			Callback = function()
 				local ok, err = pcall(callback)
@@ -5038,4 +5087,27 @@ task.spawn(function()
 	NYB.ui.notify("Hotkey " .. tostring(CFG.Keybind):gsub("Enum.KeyCode.", "") .. " · Self Test di tab Main", 4)
 end)
 
+--=== LOUD SUMMARY ===
+do
+	local L = {}
+	local function P(s) L[#L+1] = tostring(s); print("[LOUD] " .. tostring(s)) end
+	P("=========== NYB HUB LOUD SUMMARY ===========")
+	P("section dibuat : " .. tostring(#NYB.SECLOG) .. " (harusnya 39)")
+	P("  host dipakai : Tab=39 berarti nesting beres")
+	for i = 1, math.min(#NYB.SECLOG, 6) do
+		local s = NYB.SECLOG[i]
+		P(string.format("   #%d '%s' host=%s", i, s.text, s.host))
+	end
+	local bad = 0
+	for method, info in pairs(NYB.LOUDLOG or {}) do
+		bad = bad + 1
+		P(string.format("MISSING %s -> parent=%s  ada di TAB? %s", method, info.parent, tostring(info.tabOk)))
+	end
+	P("method hilang  : " .. tostring(bad))
+	P("conns ter-bind : " .. tostring(#(NYB.conns or {})))
+	P("ui.reg toggle  : " .. tostring((function() local c = 0 for _ in pairs(NYB.ui.reg or {}) do c = c + 1 end return c end)()))
+	P("CFG.EspPlayers : " .. tostring(CFG.EspPlayers))
+	P("============================================")
+	if setclipboard then pcall(setclipboard, table.concat(L, "\n")) end
+end
 print("[NYB HUB] v3.1 WindUI loaded. Remote terdeteksi: " .. tostring(NYB.remotes.count()))

@@ -21,24 +21,45 @@ Atau pakai [`loader.lua`](loader.lua) yang isinya persis satu baris itu.
 
 | File | Isi |
 |---|---|
-| `nyb_hub.lua` | NYB HUB v3.1 — versi rebrand (branding NYB) |
-| `nova_vd_v1.lua` | NOVA VD v3.1 — **asli, branding NOVA utuh**, buat pembanding A/B |
-| `nyb_hub_debug.lua` | Build diagnostik: lapor error yang biasanya ditelan `pcall` + probe otomatis |
+| `nyb_hub.lua` | **NYB HUB v3.1-fix** — build yang udah dibenerin, ini yang dipakai |
+| `nyb_hub_v31_broken.lua` | Rebrand v3.1 **sebelum fix** — buat pembanding A/B |
+| `nova_vd_v1.lua` | NOVA VD v3.1 — asli, branding NOVA utuh |
+| `nyb_hub_debug.lua` | Build diagnostik: lapor error yang biasanya ditelan `pcall` |
 | `loader.lua` | One-liner loadstring untuk `nyb_hub.lua` |
 
-Raw URL pembanding:
+Raw URL:
 
 ```lua
--- NOVA VD v3.1 (asli, WindUI)
-loadstring(game:HttpGet("https://raw.githubusercontent.com/xnotyours/nyb-hub/main/nova_vd_v1.lua"))()
+-- build fix (dipakai loader /Delta/Scripts/nyb)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/xnotyours/nyb-hub/main/nyb_hub.lua"))()
 
--- build diagnostik (probe otomatis jalan 4 detik setelah load)
-loadstring(game:HttpGet("https://raw.githubusercontent.com/xnotyours/nyb-hub/main/nyb_hub_debug.lua"))()
+-- pembanding: versi sebelum fix
+loadstring(game:HttpGet("https://raw.githubusercontent.com/xnotyours/nyb-hub/main/nyb_hub_v31_broken.lua"))()
 ```
 
-> `nyb_hub.lua` dan `nova_vd_v1.lua` **ekuivalen secara fungsional** — bedanya cuma token
-> brand (`NOV`→`NYB`, `NOVA_*`→`NYB_*`, folder config, string tampil). Kalau dua-duanya
-> berperilaku sama in-game, berarti masalahnya di port WindUI, bukan di rebrand.
+## Yang dibenerin di v3.1-fix
+
+Tiga bug di lapisan port WindUI (bukan di fiturnya — kode ESP/aim/loop byte-identik
+sama v2.6 vanilla yang jalan):
+
+1. **Section bersarang.** `U.section` pakai `parentOf(page)` yang balikin `page.__cur`,
+   jadi section ke-2 dibuat **di dalam** section ke-1, ke-3 di dalam ke-2, dst — sampai
+   10 level di tab Auto. Kontrak di `AGENTS.md` bilang harusnya sibling di bawah Tab.
+   Sekarang host-nya `page.__tab`.
+
+2. **Section gak pernah kebuka.** Di `el_Section.lua`, `Expandable` baru jadi `true`
+   saat **element pertama** masuk, dan `Open()`/`Close()` dua-duanya di-guard
+   `if Section.Expandable`. Jadi `Open()` yang dipanggil `task.defer` (karena
+   `Opened = true`) itu **no-op**. Section kekunci di tinggi header, dan
+   `Main.Outline` punya `ClipsDescendants = true` — toggle/slider di dalamnya
+   ke-clip: gak kelihatan, gak bisa diklik. Sekarang `Expandable` dipaksa `true`
+   lalu `sec:Open(true)` dipanggil, dan diulang `task.defer` setelah elemennya masuk.
+
+3. **Gagal diam-diam.** `NYB.pickParent()` ngecek tiap method (`Toggle`/`Slider`/
+   `Button`/`Paragraph`/`Colorpicker`/`Section`) ada di parent-nya; kalau nggak,
+   `warn()` nama method + tipe parent, lalu fallback ke Tab. Build gak mati separuh
+   tanpa jejak lagi. Ringkasan ke clipboard di akhir.
+
 
 
 > **Butuh internet saat inject.** WindUI gak di-embed ke dalam file — section UI-nya
